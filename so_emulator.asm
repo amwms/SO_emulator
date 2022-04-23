@@ -82,7 +82,20 @@ handle_instruction:
         call    MOV
         jmp     .end
 .fun_OR:
-
+        cmp     r8w, 0x0002
+        jne     .fun_ADD
+        call    OR 
+        jmp     .end
+.fun_ADD:
+        cmp     r8w, 0x0004
+        jne     .fun_SUB
+        call    ADD
+        jmp     .end
+.fun_SUB:
+        cmp     r8w, 0x0005
+        jne     .end
+        call    SUB
+        jmp     .end
 ;------------- group one ------------- 
 .group_one:
         cmp     r8w, 1
@@ -122,13 +135,63 @@ handle_instruction:
 ; - arg1's value = arg2's value
 ;
 ; modified registers:
-; - rsi
+; - sil
 MOV:    
         mov     sil, [rsi]
         mov     [rdi], sil  
 
         ret
 
+; Adds value arg2 to arg1 (the same as add in nasm). Doesn't modify flags C, but modifies Z.
+; two arguments: 
+; - rdi: arg1 address
+; - rsi: arg2 address
+;
+; return result:
+; - arg1's value += arg2's value
+;
+; modified registers:
+; - sil
+ADD: 
+        mov     sil, [rsi]
+        add     [rdi], sil
+        call    update_flag_z
+
+        ret
+
+; Writes OR value of arg2, arg1 into arg1 (the same as or in nasm). Doesn't modify flags C, but modifies Z.
+; two arguments: 
+; - rdi: arg1 address
+; - rsi: arg2 address
+;
+; return result:
+; - arg1's value = OR (arg2, arg1)
+;
+; modified registers:
+; - sil
+OR: 
+        mov     rsi, [rsi]
+        or      [rdi], rsi
+        call    update_flag_z
+
+        ret
+
+; Subtracts value arg2 to arg1 (the same as sub in nasm). Doesn't modify flags C, but modifies Z.
+; two arguments: 
+; - rdi: arg1 address
+; - rsi: arg2 address
+;
+; return result:
+; - arg1's value += arg2's value
+;
+; modified registers:
+; - sil
+SUB: 
+        mov     rsi, [rsi]
+        sub     [rdi], rsi
+        call    update_flag_z
+
+        ret
 
 ; Writes value imm8 into arg1. Doesn't modify flags C and Z.
 ;
@@ -251,6 +314,16 @@ get_register:
         ; mov     rax, [r10 + r9]
         lea     rax, [r9 + r10] 
         lea     rax, [r12 + rax]
+.end:
+        ret
+
+; UPDATE FLAGS
+update_flag_z:
+        jnz     .zero
+        mov     BYTE [rdx + 7], 1
+        jmp     .end
+.zero:        
+        mov     BYTE [rdx + 7], 0
 .end:
         ret
 
