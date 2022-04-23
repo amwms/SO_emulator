@@ -15,7 +15,6 @@ section .text
 ;
 ; modified registers:
 ; 
-
 so_emul:
         enter 0, 0
         push    r12 
@@ -42,7 +41,7 @@ so_emul:
         loop    .loop
         
 .save_result:      
-        mov     [rdx + 4], r13
+        mov     [rdx + 4], r13b
         mov     rax, [rdx]
 
 
@@ -129,10 +128,60 @@ handle_instruction:
         call    MOVI
         jmp     .end
 .fun_XORI:
+        cmp     r9w, 0x0003
+        jne     .fun_ADDI
+        call    XORI
+        jmp     .end
+.fun_ADDI:
+        cmp     r9w, 0x0004
+        jne     .fun_CMPI
+        call    ADDI
+        jmp     .end
+.fun_CMPI:
+        cmp     r9w, 0x0005
+        jne     .fun_RCR
+        call    CMPI
+        jmp     .end
+.fun_RCR:
+        cmp     r9w, 0x0006
+        jne     .end
+        call    RCR
+        jmp     .end
 
 .group_two:
+        cmp     r8w, 2
+        jne     .group_three
+
+        call    get_second_3_bits         ; r10w
+
+        cmp     r10w, 0x0000
+        jne     .fun_STC
+        call    CLC
+        jmp     .end
+.fun_STC:
+        cmp     r9w, 0x0001
+        jne     .end
+        call    STC
+        jmp     .end
 
 .group_three:
+        cmp     r8w, 3
+        jne     .group_three
+
+        call    get_second_3_bits         ; r10w
+        call    get_last_8_bits           ; r8w
+
+        movzx   rdi, r8w
+
+        cmp     r10w, 0x0002
+        jne     .fun_JNZ
+        call    JNC
+        jmp     .end
+.fun_JNZ:
+        cmp     r10w, 0x0004
+        jne     .end
+        call    JNZ
+        jmp     .end
 .end:
         ret
 
@@ -262,6 +311,120 @@ MOVI:
 .debug:
         ret
 
+; Xors value imm8 into arg1. Doesn't modify flags C, but modifies Z.
+;
+; two arguments: 
+; - rdi: arg1 address
+; - rsi: imm8
+;
+; return result:
+; - arg1's value = arg1 XOR imm8
+;
+; modified registers:
+; - sil
+XORI:    
+        xor     [rdi], sil
+        call    update_flag_z
+
+        ret
+
+; Adds value imm8 into arg1. Doesn't modify flags C, but modifies Z.
+;
+; two arguments: 
+; - rdi: arg1 address
+; - rsi: imm8
+;
+; return result:
+; - arg1's value += imm8
+;
+; modified registers:
+; - sil
+ADDI:    
+        add     [rdi], sil
+        call    update_flag_z
+
+        ret
+
+; Compares value imm8 to arg1. Modifies flags C and Z.
+;
+; two arguments: 
+; - rdi: arg1 address
+; - rsi: imm8
+;
+; return result:
+; - set flags Z and C according to the comparison
+;
+; modified registers:
+; - sil
+CMPI:    
+        cmp     [rdi], sil
+        call    update_flag_z
+        call    update_flag_c
+
+        ret
+
+; Rotates arg1 by one bit according to flag C. Doesn't modify flags Z, but modifies C.
+;
+; arguments: 
+; - rdi: arg1 address
+;
+; return result:
+; - set flags Z and C according to the comparison and rotates arg1
+;
+; modified registers:
+; 
+RCR:    
+        call    set_my_flag_c
+        rcr     BYTE [rdi], 1
+        call    update_flag_c
+
+        ret
+
+; Zeros flag C. Doesn't modify flags Z.
+;
+; return result:
+; - flag C is set to zero
+CLC:    
+        mov     BYTE [rdx + 6], 0
+        ret
+
+; Sets flag C to one. Doesn't modify flags Z.
+;
+; return result:
+; - flag C is set to one
+STC:    
+        mov     BYTE [rdx + 6], 1
+        ret
+
+; Works like jnz in nasm (jumps imm8 instructions). Doesn't modify flags Z and C.
+;
+; arguments: 
+; - rdi: imm8
+;
+; return result:
+; - jumps imm8 instructions
+JNZ:    
+        cmp     BYTE [rdx + 7], 0
+        jne      .end
+        
+        add     r13b, dil
+.end:
+        ret
+
+; Works like jnc in nasm (jumps imm8 instructions if flag C is set). Doesn't modify flags Z and C.
+;
+; arguments: 
+; - rdi: imm8
+;
+; return result:
+; - jumps imm8 instructions if flag C is set
+JNC:    
+        cmp     BYTE [rdx + 6], 0
+        jne      .end
+        
+        add     r13b, dil
+.end:
+        ret
 
 ; Get function group id from instruction code
 ;
@@ -394,18 +557,10 @@ set_my_flag_z:
         ret
 
 set_my_flag_c:
-        cmp     BYTE [rdx + 6], 1
+        mov     rax, 0
+        cmp     al, BYTE [rdx + 6]
         ret
 
 section .bss
 core: resq 1
 registers: resq CORES
-
-; A: resb 1 
-; D: resb 1 
-; X: resb 1 
-; Y: resb 1 
-; PC: resb 1 
-; unused: resb 1
-; C: resb 1 
-; Z: resb 1 
