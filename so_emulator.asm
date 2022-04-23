@@ -93,9 +93,20 @@ handle_instruction:
         jmp     .end
 .fun_SUB:
         cmp     r8w, 0x0005
-        jne     .end
+        jne     .fun_ADC
         call    SUB
         jmp     .end
+.fun_ADC:
+        cmp     r8w, 0x0006
+        jne     .end
+        call    ADC
+        jmp     .end
+.fun_SBB:
+        cmp     r8w, 0x0007
+        jne     .end
+        call    SBB
+        jmp     .end
+
 ;------------- group one ------------- 
 .group_one:
         cmp     r8w, 1
@@ -182,7 +193,7 @@ OR:
 ; - rsi: arg2 address
 ;
 ; return result:
-; - arg1's value += arg2's value
+; - arg1's value -= arg2's value
 ;
 ; modified registers:
 ; - sil
@@ -191,6 +202,48 @@ SUB:
         sub     [rdi], rsi
         call    update_flag_z
 
+        ret
+
+; Adds value arg2 and C to arg1 (the same as adc in nasm). Modifies flags C and Z.
+; two arguments: 
+; - rdi: arg1 address
+; - rsi: arg2 address
+;
+; return result:
+; - arg1's value += arg2's value + C
+;
+; modified registers:
+; - sil
+ADC: 
+        call set_my_flag_c
+
+        mov     sil, [rsi]
+        adc     [rdi], sil
+
+        call    update_flag_c
+        call    update_flag_z
+
+        ret
+
+; Subtracts value arg2 and C to arg1 (the same as sbb in nasm). Modifies flags C and Z.
+; two arguments: 
+; - rdi: arg1 address
+; - rsi: arg2 address
+;
+; return result:
+; - arg1's value -= (arg2's value + C)
+;
+; modified registers:
+; - sil
+SBB: 
+        call set_my_flag_c
+
+        mov     sil, [rsi]
+        sbb     [rdi], sil
+
+        call    update_flag_c
+        call    update_flag_z
+        
         ret
 
 ; Writes value imm8 into arg1. Doesn't modify flags C and Z.
@@ -319,12 +372,29 @@ get_register:
 
 ; UPDATE FLAGS
 update_flag_z:
-        jnz     .zero
+        jnz     .not_zero
         mov     BYTE [rdx + 7], 1
         jmp     .end
-.zero:        
+.not_zero:        
         mov     BYTE [rdx + 7], 0
 .end:
+        ret
+
+update_flag_c:
+        jnc     .not_carry
+        mov     BYTE [rdx + 6], 1
+        jmp     .end
+.not_carry:        
+        mov     BYTE [rdx + 6], 0
+.end:
+        ret
+
+set_my_flag_z:
+        cmp     BYTE [rdx + 7], 1
+        ret
+
+set_my_flag_c:
+        cmp     BYTE [rdx + 6], 1
         ret
 
 section .bss
