@@ -1,10 +1,12 @@
 PROJECT = so_emulator
 
+export N=4
+
 NASM = nasm
-NASMFLAGS = -f elf64 -w+all -w+error
+NASMFLAGS = -DCORES=$N -f elf64 -w+all -w+error
 OBJS = so_emulator_example.o so_emulator.o
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c17 -O2
+CFLAGS = -DCORES=$N -Wall -Wextra -std=c17 -O2
 LDFLAGS = -pthread
 
 .PHONY : all clean valgrind
