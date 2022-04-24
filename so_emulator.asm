@@ -14,14 +14,12 @@ section .text
 ; - rax: so_state 
 ;
 ; modified registers:
-; 
+; rdx, rcx, rsi, rdi, rax, r8
 so_emul:
-        enter 0, 0
         push    r12 
         push    r13 
         push    r14
-
-        ; mov     r13, 0                  ; counter of loops    
+   
         xchg    rdx, rcx 
         mov     r12, rsi
         mov     r11, rdi
@@ -52,18 +50,13 @@ so_emul:
         pop     r14
         pop     r13 
         pop     r12
-        leave
         ret
 
 ; ================= HANDLE INSTRUCTION =========================
 handle_instruction:
         cmp     r8w, 0
         jne     .group_one
-;------------- group zero -------------
-        ; mov     di, [r11]
-        
-        ; call    get_group0_args
-        ; call    get_function_id         ; function id is in register r8w
+; -------------  GROUP ZERO  -------------
 
         call    get_first_3_bits          ; r9w - second arg
         call    get_second_3_bits         ; r10w - first arg
@@ -78,52 +71,106 @@ handle_instruction:
         xchg    rsi, rdi
 
         call    get_register
-        mov     rsi, rax                  ; ======================
+        mov     rsi, rax                  
 
-.debug3:
-        cmp     r8w, 0x0000
+        cmp     r8w, 0x0000               ; check if instruction is MOV
         jne     .fun_OR
-        call    MOV
+; ============  MOV  ============
+; Writes value arg2 into arg1 (the same as mov in nasm). Doesn't modify flags C and Z.
+; arguments: rdi - arg1 address, rsi - arg2 address        
+        ; call    MOV
+        mov     sil, [rsi]
+        mov     [rdi], sil
+
         jmp     .end
 .fun_OR:
         cmp     r8w, 0x0002
         jne     .fun_ADD
-        call    OR 
+; ============  OR   ============
+; Writes OR value of arg2, arg1 into arg1 (the same as or in nasm). Doesn't modify flags C, but modifies Z.
+; arguments: rdi- arg1 address, rsi - arg2 address
+        ; call    OR
+        mov     sil, [rsi]
+        or      [rdi], sil
+        call    update_flag_z
+
         jmp     .end
 .fun_ADD:
         cmp     r8w, 0x0004
         jne     .fun_SUB
-        call    ADD
+; ============  ADD  ============
+; Adds value arg2 to arg1 (the same as add in nasm). Doesn't modify flags C, but modifies Z.
+; arguments: rdi - arg1 address, rsi - arg2 address        
+        ; call    ADD
+        mov     sil, [rsi]
+        add     [rdi], sil
+        call    update_flag_z
+
         jmp     .end
 .fun_SUB:
         cmp     r8w, 0x0005
         jne     .fun_ADC
-        call    SUB
+; ============  SUB  ============
+; Subtracts value arg2 to arg1 (the same as sub in nasm). Doesn't modify flags C, but modifies Z.
+; arguments: rdi - arg1 address, rsi - arg2 address
+        ; call    SUB
+        mov     sil, [rsi]
+        sub     [rdi], sil
+        call    update_flag_z
+
         jmp     .end
 .fun_ADC:
         cmp     r8w, 0x0006
         jne     .fun_SBB
-        call    ADC
+; ============  ADC  ============
+; Adds value arg2 and C to arg1 (the same as adc in nasm). Modifies flags C and Z.
+; arguments: rdi - arg1 address, rsi - arg2 address
+        ; call    ADC
+        call set_my_flag_c
+
+        mov     sil, [rsi]
+        adc     [rdi], sil
+
+        call    update_flag_c
+        call    update_flag_z
+
         jmp     .end
 .fun_SBB:
         cmp     r8w, 0x0007
         jne     .fun_XCHG
-        call    SBB
+; ============  SBB  ============  
+; Subtracts value arg2 and C to arg1 (the same as sbb in nasm). Modifies flags C and Z.
+; arguments: rdi - arg1 address, rsi - arg2 address     
+        ; call    SBB
+        call set_my_flag_c
+
+        mov     sil, [rsi]
+        sbb     [rdi], sil
+
+        call    update_flag_c
+        call    update_flag_z
+
         jmp     .end
 .fun_XCHG:
         cmp     r8w, 0x0008
         jne     .end
-        call    XCHG
+; ===========  XCHG  ============
+; Exchanges arg2 and arg1 (the same as xchg in nasm). Doesn't modify flags C and Z.
+; arguments: rdi - arg1 address, rsi - arg2 address
+        ; call    XCHG
+        mov     al, [rsi]
+        xchg    [rdi], al
+        mov     [rsi], al
+
         jmp     .end        
 
-;------------- group one ------------- 
+; -------------  GROUP ONE   ------------- 
 .group_one:
         cmp     r8w, 1
         jne     .group_two
 
-        ; call    get_first_3_bits          ; r9w - instruction id
-        call    get_second_3_bits         ; r10w
-        call    get_last_8_bits           ; r8w
+        call    get_second_3_bits         ; r10w - arg1
+        call    get_last_8_bits           ; r8w - imm8
 
         movzx   rsi, r10w                 ; get arg1 address
         call    get_register
@@ -132,48 +179,83 @@ handle_instruction:
         movzx   rsi, r8w
 
         call    get_first_3_bits          ; r9w - instruction id
-.debugo:
+
         cmp     r9w, 0x0000
         jne     .fun_XORI
-        call    MOVI
+; ============  MOVI  ============ 
+; Writes value imm8 into arg1. Doesn't modify flags C and Z.
+; arguments: rdi - arg1 address, rsi - imm8
+        ; call    MOVI
+        mov     [rdi], sil 
+
         jmp     .end
 .fun_XORI:
         cmp     r9w, 0x0003
         jne     .fun_ADDI
-        call    XORI
+; ============  XORI  ============ 
+; Xors value imm8 into arg1. Doesn't modify flags C, but modifies Z.
+; arguments: rdi - arg1 address, rsi - imm8
+        ; call    XORI
+        xor     [rdi], sil
+        call    update_flag_z
+
         jmp     .end
 .fun_ADDI:
         cmp     r9w, 0x0004
         jne     .fun_CMPI
-        call    ADDI
+; ============  ADDI  ============ 
+; Adds value imm8 into arg1. Doesn't modify flags C, but modifies Z.
+; arguments: rdi - arg1 address, rsi - imm8
+        ; call    ADDI
+        add     [rdi], sil
+        call    update_flag_z
+
         jmp     .end
 .fun_CMPI:
         cmp     r9w, 0x0005
         jne     .fun_RCR
-        call    CMPI
+; ============  CMPI  ============ 
+; Compares value imm8 to arg1. Modifies flags C and Z.
+; arguments: rdi - arg1 address, rsi - imm8
+        ; call    CMPI
+        cmp     [rdi], sil
+        call    update_flag_z
+        call    update_flag_c
+
         jmp     .end
 .fun_RCR:
         cmp     r9w, 0x0006
         jne     .end
-        call    RCR
+; ============  RCR   ============ 
+; Rotates arg1 by one bit according to flag C. Doesn't modify flags Z, but modifies C.
+; arguments: rdi - arg1 address
+        ; call    RCR
+        call    set_my_flag_c
+        rcr     BYTE [rdi], 1
+        call    update_flag_c
+
         jmp     .end
 
-.group_two:                             ; TODO - one line: mov [rdx + 6], r10w 
+; -------------  GROUP TWO   ------------- 
+.group_two:                             
         cmp     r8w, 2
         jne     .group_three
 
-        call    get_second_3_bits         ; r10w
+        call    get_second_3_bits         ; r10w - instruction id and new flag C value
 
-        cmp     r10w, 0x0000
-        jne     .fun_STC
-        call    CLC
-        jmp     .end
-.fun_STC:
-        cmp     r10w, 0x0001
-        jne     .end
-        call    STC
+;         cmp     r10w, 0x0000
+;         jne     .fun_STC
+;         call    CLC
+;         jmp     .end
+; .fun_STC:
+;         cmp     r10w, 0x0001
+;         jne     .end
+;         call    STC
+;         jmp     .end
+        mov     BYTE [rdx + 6], r10b
         jmp     .end
 
+; ------------  GROUP THREE  -------------
 .group_three:
         cmp     r8w, 3
         jne     .group_three
@@ -185,32 +267,73 @@ handle_instruction:
 
         cmp     r10w, 0x0000              ; instruction JMP
         jne     .fun_JNC
-        call    JMP
+; ============  JMP  ============ 
+; Works like jmp in nasm (jumps imm8 instructions). Doesn't modify flags Z and C.
+; arguments: rdi - imm8
+        ; call    JMP
+        add     r13b, dil
+
         jmp     .end
 .fun_JNC:
         cmp     r10w, 0x0002
         jne     .fun_JC
-        call    JNC
+; ============  JNC  ============
+; Works like jnc in nasm (jumps imm8 instructions if flag C not is set). Doesn't modify flags Z and C.
+; arguments: rdi - imm8
+        ; call    JNC
+        cmp     BYTE [rdx + 6], 0
+        jne      .end_jnc
+        add     r13b, dil
+.end_jnc:
+
         jmp     .end
 .fun_JC:
         cmp     r10w, 0x0003
         jne     .fun_JNZ
-        call    JC
+; ============  JC   ============
+; Works like jnc in nasm (jumps imm8 instructions if flag C is set). Doesn't modify flags Z and C.
+; arguments: rdi - imm8
+        ; call    JC
+        cmp     BYTE [rdx + 6], 1
+        jne      .end_jc        
+        add     r13b, dil
+.end_jc:
+
         jmp     .end
 .fun_JNZ:
         cmp     r10w, 0x0004
         jne     .fun_JZ
-        call    JNZ
+; ============  JNZ  ============
+; Works like jnz in nasm (jumps imm8 instructions if flag Z is not set to 1). Doesn't modify flags Z and C.
+; arguments: rdi - imm8
+        ; call    JNZ
+        cmp     BYTE [rdx + 7], 0
+        jne      .end_jnz
+        add     r13b, dil
+.end_jnz:
+
         jmp     .end
 .fun_JZ:
         cmp     r10w, 0x0005
         jne     .fun_BRK
-        call    JZ
+; ============  JZ   ============
+; Works like jz in nasm (jumps imm8 instructions if flag Z is set to 1). Doesn't modify flags Z and C.
+; arguments: rdi - imm8
+        ; call    JZ
+        cmp     BYTE [rdx + 7], 1
+        jne      .end_jz
+        add     r13b, dil
+.end_jz:
+
         jmp     .end
 .fun_BRK:
         cmp     WORD [r11 + r13 * 2], 0xFFFF
         jne     .end
-        call    BRK
+; ============  BRK  ============
+; Breaks the code (sets the break flag - r14 - to 1). Doesn't modify flags Z and C.
+        ; call    BRK
+        mov     r14, 1
+
         jmp     .end
 .end:
         ret
@@ -226,11 +349,11 @@ handle_instruction:
 ;
 ; modified registers:
 ; - sil
-MOV:    
-        mov     sil, [rsi]
-        mov     [rdi], sil  
+; MOV:    
+;         mov     sil, [rsi]
+;         mov     [rdi], sil  
 
-        ret
+;         ret
 
 ; Adds value arg2 to arg1 (the same as add in nasm). Doesn't modify flags C, but modifies Z.
 ; two arguments: 
@@ -242,12 +365,12 @@ MOV:
 ;
 ; modified registers:
 ; - sil
-ADD: 
-        mov     sil, [rsi]
-        add     [rdi], sil
-        call    update_flag_z
+; ADD: 
+;         mov     sil, [rsi]
+;         add     [rdi], sil
+;         call    update_flag_z
 
-        ret
+;         ret
 
 ; Writes OR value of arg2, arg1 into arg1 (the same as or in nasm). Doesn't modify flags C, but modifies Z.
 ; two arguments: 
@@ -258,13 +381,13 @@ ADD:
 ; - arg1's value = OR (arg2, arg1)
 ;
 ; modified registers:
-; - sil
-OR: 
-        mov     sil, [rsi]
-        or      [rdi], sil
-        call    update_flag_z
+; ; - sil
+; OR: 
+;         mov     sil, [rsi]
+;         or      [rdi], sil
+;         call    update_flag_z
 
-        ret
+;         ret
 
 ; Subtracts value arg2 to arg1 (the same as sub in nasm). Doesn't modify flags C, but modifies Z.
 ; two arguments: 
@@ -276,12 +399,12 @@ OR:
 ;
 ; modified registers:
 ; - sil
-SUB: 
-        mov     sil, [rsi]
-        sub     [rdi], sil
-        call    update_flag_z
+; SUB: 
+;         mov     sil, [rsi]
+;         sub     [rdi], sil
+;         call    update_flag_z
 
-        ret
+;         ret
 
 ; Adds value arg2 and C to arg1 (the same as adc in nasm). Modifies flags C and Z.
 ; two arguments: 
@@ -293,16 +416,16 @@ SUB:
 ;
 ; modified registers:
 ; - sil
-ADC: 
-        call set_my_flag_c
+; ADC: 
+;         call set_my_flag_c
 
-        mov     sil, [rsi]
-        adc     [rdi], sil
+;         mov     sil, [rsi]
+;         adc     [rdi], sil
 
-        call    update_flag_c
-        call    update_flag_z
+;         call    update_flag_c
+;         call    update_flag_z
 
-        ret
+;         ret
 
 ; Subtracts value arg2 and C to arg1 (the same as sbb in nasm). Modifies flags C and Z.
 ; two arguments: 
@@ -314,16 +437,16 @@ ADC:
 ;
 ; modified registers:
 ; - sil
-SBB: 
-        call set_my_flag_c
+; SBB: 
+;         call set_my_flag_c
 
-        mov     sil, [rsi]
-        sbb     [rdi], sil
+;         mov     sil, [rsi]
+;         sbb     [rdi], sil
 
-        call    update_flag_c
-        call    update_flag_z
+;         call    update_flag_c
+;         call    update_flag_z
         
-        ret
+;         ret
 
 ; Exchanges arg2 and arg1 (the same as xchg in nasm). Doesn't modify flags C and Z.
 ; two arguments: 
@@ -336,12 +459,12 @@ SBB:
 ;
 ; modified registers:
 ; - al
-XCHG: 
-        mov     al, [rsi]
-        xchg    [rdi], al
-        mov     [rsi], al 
+; XCHG: 
+;         mov     al, [rsi]
+;         xchg    [rdi], al
+;         mov     [rsi], al 
         
-        ret
+;         ret
 
 ; Writes value imm8 into arg1. Doesn't modify flags C and Z.
 ;
@@ -354,10 +477,10 @@ XCHG:
 ;
 ; modified registers:
 ; - 
-MOVI:    
-        mov     [rdi], sil  
-.debug:
-        ret
+; MOVI:    
+;         mov     [rdi], sil  
+; .debug:
+;         ret
 
 ; Xors value imm8 into arg1. Doesn't modify flags C, but modifies Z.
 ;
@@ -370,11 +493,11 @@ MOVI:
 ;
 ; modified registers:
 ; - sil
-XORI:    
-        xor     [rdi], sil
-        call    update_flag_z
+; XORI:    
+;         xor     [rdi], sil
+;         call    update_flag_z
 
-        ret
+;         ret
 
 ; Adds value imm8 into arg1. Doesn't modify flags C, but modifies Z.
 ;
@@ -387,11 +510,11 @@ XORI:
 ;
 ; modified registers:
 ; - sil
-ADDI:    
-        add     [rdi], sil
-        call    update_flag_z
+; ADDI:    
+;         add     [rdi], sil
+;         call    update_flag_z
 
-        ret
+;         ret
 
 ; Compares value imm8 to arg1. Modifies flags C and Z.
 ;
@@ -404,12 +527,12 @@ ADDI:
 ;
 ; modified registers:
 ; - sil
-CMPI:    
-        cmp     [rdi], sil
-        call    update_flag_z
-        call    update_flag_c
+; CMPI:    
+;         cmp     [rdi], sil
+;         call    update_flag_z
+;         call    update_flag_c
 
-        ret
+;         ret
 
 ; Rotates arg1 by one bit according to flag C. Doesn't modify flags Z, but modifies C.
 ;
@@ -421,28 +544,28 @@ CMPI:
 ;
 ; modified registers:
 ; 
-RCR:    
-        call    set_my_flag_c
-        rcr     BYTE [rdi], 1
-        call    update_flag_c
+; RCR:    
+;         call    set_my_flag_c
+;         rcr     BYTE [rdi], 1
+;         call    update_flag_c
 
-        ret
+;         ret
 
 ; Zeros flag C. Doesn't modify flags Z.
 ;
 ; return result:
 ; - flag C is set to zero
-CLC:    
-        mov     BYTE [rdx + 6], 0
-        ret
+; CLC:    
+;         mov     BYTE [rdx + 6], 0
+;         ret
 
 ; Sets flag C to one. Doesn't modify flags Z.
 ;
 ; return result:
 ; - flag C is set to one
-STC:    
-        mov     BYTE [rdx + 6], 1
-        ret
+; STC:    
+;         mov     BYTE [rdx + 6], 1
+;         ret
 
 ; Works like jmp in nasm (jumps imm8 instructions). Doesn't modify flags Z and C.
 ;
@@ -451,9 +574,9 @@ STC:
 ;
 ; return result:
 ; - jumps imm8 instructions
-JMP:    
-        add     r13b, dil
-        ret
+; JMP:    
+;         add     r13b, dil
+;         ret
 
 ; Works like jnc in nasm (jumps imm8 instructions if flag C not is set). Doesn't modify flags Z and C.
 ;
@@ -462,13 +585,13 @@ JMP:
 ;
 ; return result:
 ; - jumps imm8 instructions if flag C is set
-JNC:    
-        cmp     BYTE [rdx + 6], 0
-        jne      .end
+; JNC:    
+;         cmp     BYTE [rdx + 6], 0
+;         jne      .end
         
-        add     r13b, dil
-.end:
-        ret
+;         add     r13b, dil
+; .end:
+;         ret
 
 ; Works like jnc in nasm (jumps imm8 instructions if flag C is set). Doesn't modify flags Z and C.
 ;
@@ -477,13 +600,13 @@ JNC:
 ;
 ; return result:
 ; - jumps imm8 instructions if flag C is set
-JC:    
-        cmp     BYTE [rdx + 6], 1
-        jne      .end
+; JC:    
+;         cmp     BYTE [rdx + 6], 1
+;         jne      .end
         
-        add     r13b, dil
-.end:
-        ret
+;         add     r13b, dil
+; .end:
+;         ret
 
 
 ; Works like jnz in nasm (jumps imm8 instructions if flag Z is not set to 1). Doesn't modify flags Z and C.
@@ -493,13 +616,13 @@ JC:
 ;
 ; return result:
 ; - jumps imm8 instructions
-JNZ:    
-        cmp     BYTE [rdx + 7], 0
-        jne      .end
+; JNZ:    
+;         cmp     BYTE [rdx + 7], 0
+;         jne      .end
         
-        add     r13b, dil
-.end:
-        ret
+;         add     r13b, dil
+; .end:
+;         ret
 
 ; Works like jnz in nasm (jumps imm8 instructions if flag Z is set to 1). Doesn't modify flags Z and C.
 ;
@@ -508,21 +631,21 @@ JNZ:
 ;
 ; return result:
 ; - jumps imm8 instructions
-JZ:    
-        cmp     BYTE [rdx + 7], 1
-        jne      .end
+; JZ:    
+;         cmp     BYTE [rdx + 7], 1
+;         jne      .end
         
-        add     r13b, dil
-.end:
-        ret
+;         add     r13b, dil
+; .end:
+;         ret
 
 ; Breaks the code. Doesn't modify flags Z and C.
 ;
 ; return result:
 ; - sets flag "to break code" to 1
-BRK:    
-        mov     r14, 1
-        ret
+; BRK:    
+;         mov     r14, 1
+;         ret
 
 
 ; Get function group id from instruction code
