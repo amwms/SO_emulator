@@ -158,7 +158,7 @@ handle_instruction:
         call    RCR
         jmp     .end
 
-.group_two:
+.group_two:                             ; TODO - one line: mov [rdx + 6], r10w 
         cmp     r8w, 2
         jne     .group_three
 
@@ -169,7 +169,7 @@ handle_instruction:
         call    CLC
         jmp     .end
 .fun_STC:
-        cmp     r9w, 0x0001
+        cmp     r10w, 0x0001
         jne     .end
         call    STC
         jmp     .end
@@ -204,11 +204,11 @@ handle_instruction:
         jmp     .end
 .fun_JZ:
         cmp     r10w, 0x0005
-        jne     .end
-        call    JNZ
+        jne     .fun_BRK
+        call    JZ
         jmp     .end
 .fun_BRK:
-        cmp     WORD [r11 + r13 * 2], -1
+        cmp     WORD [r11 + r13 * 2], 0xFFFF
         jne     .end
         call    BRK
         jmp     .end
