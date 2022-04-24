@@ -618,16 +618,20 @@ get_register:
         jne     .yd_value
 
         movzx   r10, BYTE [rdx + 2]
-        movzx   r9, BYTE [rdx + 1] ; TODO mod 256
+        movzx   r9, BYTE [rdx + 1] 
         ; mov     rax, [r10 + r9]
-        lea     rax, [r9 + r10]
+        add     r9b, r10b
+        movzx   rax, r9b
+        ;;lea     rax, [r9 + r10]
         lea     rax, [r12 + rax]
         jmp     .end
 .yd_value:        
         movzx   r10, BYTE [rdx + 3]
         movzx   r9, BYTE [rdx + 1]
         ; mov     rax, [r10 + r9]
-        lea     rax, [r9 + r10] 
+        add     r9b, r10b
+        movzx   rax, r9b
+        ; lea     rax, [r9 + r10] 
         lea     rax, [r12 + rax]
 .end:
         ret
