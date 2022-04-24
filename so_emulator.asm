@@ -467,5 +467,4 @@ set_my_flag_c:
         ret
 
 section .bss
-core: resq 1
 registers: resq CORES
