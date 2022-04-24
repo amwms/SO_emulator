@@ -19,6 +19,7 @@ so_emul:
         enter 0, 0
         push    r12 
         push    r13 
+        push    r14
 
         ; mov     r13, 0                  ; counter of loops    
         xchg    rdx, rcx 
@@ -28,23 +29,27 @@ so_emul:
         lea     r8, [rel registers] 
         lea     rdx, [r8 + rdx * 8]       ; address of the first SO register
 
-        movzx   r13, BYTE [rdx + 4]           ; counter of loops
+        movzx   r13, BYTE [rdx + 4]       ; counter of loops
+        mov     r14, 0                    ; flag if to break program
 
         cmp     rcx, 0
         je      .save_result
 
-.loop:
-        call    get_group                ; group id in register r8w
+.loop:  
+        call    get_group                 ; group id in register r8w
         call    handle_instruction
 
         inc     r13b
+        cmp     r14, 1
+        je      .save_result
+
         loop    .loop
         
 .save_result:      
         mov     [rdx + 4], r13b
         mov     rax, [rdx]
 
-
+        pop     r14
         pop     r13 
         pop     r12
         leave
@@ -97,14 +102,19 @@ handle_instruction:
         jmp     .end
 .fun_ADC:
         cmp     r8w, 0x0006
-        jne     .end
+        jne     .fun_SBB
         call    ADC
         jmp     .end
 .fun_SBB:
         cmp     r8w, 0x0007
-        jne     .end
+        jne     .fun_XCHG
         call    SBB
         jmp     .end
+.fun_XCHG:
+        cmp     r8w, 0x0008
+        jne     .end
+        call    XCHG
+        jmp     .end        
 
 ;------------- group one ------------- 
 .group_one:
@@ -173,14 +183,34 @@ handle_instruction:
 
         movzx   rdi, r8w
 
+        cmp     r10w, 0x0000              ; instruction JMP
+        jne     .fun_JNC
+        call    JMP
+        jmp     .end
+.fun_JNC:
         cmp     r10w, 0x0002
-        jne     .fun_JNZ
+        jne     .fun_JC
         call    JNC
+        jmp     .end
+.fun_JC:
+        cmp     r10w, 0x0003
+        jne     .fun_JNZ
+        call    JC
         jmp     .end
 .fun_JNZ:
         cmp     r10w, 0x0004
+        jne     .fun_JZ
+        call    JNZ
+        jmp     .end
+.fun_JZ:
+        cmp     r10w, 0x0005
         jne     .end
         call    JNZ
+        jmp     .end
+.fun_BRK:
+        cmp     WORD [r11 + r13 * 2], -1
+        jne     .end
+        call    BRK
         jmp     .end
 .end:
         ret
@@ -230,8 +260,8 @@ ADD:
 ; modified registers:
 ; - sil
 OR: 
-        mov     rsi, [rsi]
-        or      [rdi], rsi
+        mov     sil, [rsi]
+        or      [rdi], sil
         call    update_flag_z
 
         ret
@@ -247,8 +277,8 @@ OR:
 ; modified registers:
 ; - sil
 SUB: 
-        mov     rsi, [rsi]
-        sub     [rdi], rsi
+        mov     sil, [rsi]
+        sub     [rdi], sil
         call    update_flag_z
 
         ret
@@ -292,6 +322,24 @@ SBB:
 
         call    update_flag_c
         call    update_flag_z
+        
+        ret
+
+; Exchanges arg2 and arg1 (the same as xchg in nasm). Doesn't modify flags C and Z.
+; two arguments: 
+; - rdi: arg1 address
+; - rsi: arg2 address
+;
+; return result:
+; - arg1 <= arg2
+; - arg2 <= arg1
+;
+; modified registers:
+; - al
+XCHG: 
+        mov     al, [rsi]
+        xchg    [rdi], al
+        mov     [rsi], al 
         
         ret
 
@@ -396,7 +444,49 @@ STC:
         mov     BYTE [rdx + 6], 1
         ret
 
-; Works like jnz in nasm (jumps imm8 instructions). Doesn't modify flags Z and C.
+; Works like jmp in nasm (jumps imm8 instructions). Doesn't modify flags Z and C.
+;
+; arguments: 
+; - rdi: imm8
+;
+; return result:
+; - jumps imm8 instructions
+JMP:    
+        add     r13b, dil
+        ret
+
+; Works like jnc in nasm (jumps imm8 instructions if flag C not is set). Doesn't modify flags Z and C.
+;
+; arguments: 
+; - rdi: imm8
+;
+; return result:
+; - jumps imm8 instructions if flag C is set
+JNC:    
+        cmp     BYTE [rdx + 6], 0
+        jne      .end
+        
+        add     r13b, dil
+.end:
+        ret
+
+; Works like jnc in nasm (jumps imm8 instructions if flag C is set). Doesn't modify flags Z and C.
+;
+; arguments: 
+; - rdi: imm8
+;
+; return result:
+; - jumps imm8 instructions if flag C is set
+JC:    
+        cmp     BYTE [rdx + 6], 1
+        jne      .end
+        
+        add     r13b, dil
+.end:
+        ret
+
+
+; Works like jnz in nasm (jumps imm8 instructions if flag Z is not set to 1). Doesn't modify flags Z and C.
 ;
 ; arguments: 
 ; - rdi: imm8
@@ -411,20 +501,29 @@ JNZ:
 .end:
         ret
 
-; Works like jnc in nasm (jumps imm8 instructions if flag C is set). Doesn't modify flags Z and C.
+; Works like jnz in nasm (jumps imm8 instructions if flag Z is set to 1). Doesn't modify flags Z and C.
 ;
 ; arguments: 
 ; - rdi: imm8
 ;
 ; return result:
-; - jumps imm8 instructions if flag C is set
-JNC:    
-        cmp     BYTE [rdx + 6], 0
+; - jumps imm8 instructions
+JZ:    
+        cmp     BYTE [rdx + 7], 1
         jne      .end
         
         add     r13b, dil
 .end:
         ret
+
+; Breaks the code. Doesn't modify flags Z and C.
+;
+; return result:
+; - sets flag "to break code" to 1
+BRK:    
+        mov     r14, 1
+        ret
+
 
 ; Get function group id from instruction code
 ;
@@ -502,31 +601,31 @@ get_register:
         jmp     .end
 .x_value:
         cmp     si, 4
-        jne      .y_value
+        jne     .y_value
 
-        movzx     rax, BYTE [rdx + 2]
+        movzx   rax, BYTE [rdx + 2]
         lea     rax, [r12 + rax]
         jmp     .end
 .y_value:
         cmp     si, 5
         jne      .xd_value
 
-        movzx     rax, BYTE [rdx + 3]
+        movzx   rax, BYTE [rdx + 3]
         lea     rax, [r12 + rax]
         jmp     .end
 .xd_value:        
         cmp     si, 6
-        jne      .yd_value
+        jne     .yd_value
 
-        movzx     r10, BYTE [rdx + 2]
-        movzx     r9, BYTE [rdx + 1] ; TODO mod 256
+        movzx   r10, BYTE [rdx + 2]
+        movzx   r9, BYTE [rdx + 1] ; TODO mod 256
         ; mov     rax, [r10 + r9]
         lea     rax, [r9 + r10]
         lea     rax, [r12 + rax]
         jmp     .end
 .yd_value:        
-        movzx     r10, BYTE [rdx + 3]
-        movzx     r9, BYTE [rdx + 1]
+        movzx   r10, BYTE [rdx + 3]
+        movzx   r9, BYTE [rdx + 1]
         ; mov     rax, [r10 + r9]
         lea     rax, [r9 + r10] 
         lea     rax, [r12 + rax]
