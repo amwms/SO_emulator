@@ -18,8 +18,7 @@ section .text
 so_emul:
         push    r12 
         push    r13 
-        ; push    r14
-   
+
         xchg    rdx, rcx 
         mov     r12, rsi
         mov     r11, rdi
@@ -28,7 +27,6 @@ so_emul:
         lea     rdx, [r8 + rdx * 8]       ; address of the first SO register
 
         movzx   r13, BYTE [rdx + 4]       ; counter of loops
-        ; mov     r14, 0                    ; flag if to break program
 
         cmp     rcx, 0
         je      .save_result
@@ -46,16 +44,12 @@ so_emul:
         call    handle_instruction
 
         inc     r13b
-        ; cmp     r14, 1
-        ; je      .save_result
-
         loop    .loop
         
 .save_result:      
         mov     [rdx + 4], r13b
         mov     rax, [rdx]
 
-        ; pop     r14
         pop     r13 
         pop     r12
         ret
@@ -298,22 +292,13 @@ handle_instruction:
         jmp     .end
 .fun_JZ:
         cmp     r10w, 0x0005
-        jne     .fun_BRK
+        jne     .end
 ; ============  JZ   ============
 ; Works like jz in nasm (jumps imm8 instructions if flag Z is set to 1). Doesn't modify flags Z and C.
 ; arguments: rdi - imm8
         cmp     BYTE [rdx + 7], 1
-        jne      .end_jz
+        jne      .end
         add     r13b, dil
-.end_jz:
-
-        jmp     .end
-.fun_BRK:
-;         cmp     WORD [r11 + r13 * 2], 0xFFFF
-;         jne     .end
-; ; ============  BRK  ============
-; ; Breaks the code (sets the break flag - r14 - to 1). Doesn't modify flags Z and C.
-;         mov     r14, 1
 .end:
         ret
 
