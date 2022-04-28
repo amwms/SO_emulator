@@ -305,10 +305,11 @@ handle_instruction:
 
 ; Get function group id from instruction code
 ;
-; two arguments: 
+; arguments: 
+; - [r11]: operation code
 ;
 ; return result:
-; - rax: so_state 
+; - r8w: group id
 ;
 ; modified registers:
 ; - r8w
@@ -318,6 +319,15 @@ get_group:
 
         ret
 
+; Get last 8 bits from operation code
+; arguments: 
+; - [r11]: operation code
+;
+; return result:
+; - r8w: first 3 bits value
+;
+; modified registers:
+; - r8w
 get_last_8_bits:
         mov     r8w, [r11 + r13 * 2]
         and     r8w, 0x00FF
